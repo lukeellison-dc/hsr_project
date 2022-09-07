@@ -1,4 +1,4 @@
-from asr_trainer import ASRTrainer, CVDataset, CTCLoss
+from asr_trainer import ASRTrainer, CVDataset, CTCLoss, TargetCreator
 import torch
 import torchaudio
 
@@ -29,8 +29,9 @@ asrt.load_model()
 cvd = CVDataset(asrt.processor)
 cvd.preload_datasets()
 ctc_loss = CTCLoss()
+target_creator = TargetCreator()
 
-optimizer_ft = torch.optim.AdamW(asrt.model.parameters(), lr=0.0001, weight_decay=0.01)
+optimizer_ft = torch.optim.AdamW(asrt.model.parameters(), lr=0.0003, weight_decay=0.01)
 exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
 
 def train_model(trainer, optimizer, scheduler, num_epochs=25):
@@ -56,21 +57,21 @@ def train_model(trainer, optimizer, scheduler, num_epochs=25):
             running_wer = 0.0
 
             # Iterate over data.
-            for d in progress(cvd.single_dataloader(phase), total=cvd.dataset_sizes[phase]):
+            for d in progress(cvd.batch_dataloader(phase), total=cvd.dataset_sizes[phase]):
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
                 logits = trainer.get_logits(d["input_values"], grad=(phase == 'train'))
                 pred = trainer.predict_argmax_from_logits(logits)
-                print(f'sentence = {d["sentence"]}')
-                print(f'pred = {pred}')
+                print(f'sentence = {d["sentence"][0]}')
+                print(f'pred = {pred[0]}')
 
                 wer = torchaudio.functional.edit_distance(d["sentence"], pred)
                 print(f'wer = {wer}')
 
-                target = ctc_loss.sentence_to_target(d["sentence"])
-                loss = ctc_loss.singleLoss(input_logits=logits, target=target)
-                print(f'loss = {loss}')
+                target = target_creator.sentence_to_target(d["sentence"])
+                loss = ctc_loss(logits, target)
+                print(f'loss = {loss.item()}')
 
                 # backward + optimize only if in training phase
                 if phase == 'train':

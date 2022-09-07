@@ -1,4 +1,7 @@
 import torch
+from torch import nn
+import torch.nn.functional as F
+from einops import rearrange
 import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
@@ -32,10 +35,45 @@ class ASRTrainer():
 
     def predict_argmax_from_logits(self, logits):
         pred_ids = self.pred_ids_from_logits(logits)
-        return self.processor.batch_decode(pred_ids)[0]
+        return self.processor.batch_decode(pred_ids)
+
+class CTCLoss(nn.Module):
+    """Convenient wrapper for CTCLoss that handles log_softmax and taking input/target lengths."""
+
+    def __init__(self, blank: int = 0) -> None:
+        """Init method.
+
+        Args:
+            blank (int, optional): Blank token. Defaults to 0.
+        """
+        super().__init__()
+        self.blank = blank
+
+    def forward(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Forward method.
+
+        Args:
+            preds (torch.Tensor): Model predictions. Tensor of shape (batch, sequence_length, num_classes), or (N, T, C).
+            targets (torch.Tensor): Target tensor of shape (batch, max_seq_length). max_seq_length may vary
+                per batch.
+
+        Returns:
+            torch.Tensor: Loss scalar.
+        """
+        print(preds.shape)
+        print(targets.shape)
+        preds = preds.log_softmax(-1)
+        batch, seq_len, classes = preds.shape
+        preds = rearrange(preds, "n t c -> t n c") # since ctc_loss needs (T, N, C) inputs
+        # equiv. to preds = preds.permute(1, 0, 2), if you don't use einops
+
+        pred_lengths = torch.full(size=(batch,), fill_value=seq_len, dtype=torch.long)
+        target_lengths = torch.count_nonzero(targets, axis=1)
+
+        return F.ctc_loss(preds, targets, pred_lengths, target_lengths, blank=self.blank, zero_infinity=True)
 
 
-class CTCLoss():
+class TargetCreator():
     def __init__(self, vocab="vocab.json"):
         self.re_chars_to_remove = re.compile(r"[^A-Z ']")
 
@@ -66,11 +104,12 @@ class CTCLoss():
         t = torch.zeros([1, pad_len], dtype=torch.int)
         for i,x in enumerate(sentence):
             t[0][i] = self.vocab[x]
-        return {
-            "target": t,
-            "target_len": len(sentence),
-            "pad_len": pad_len,
-        }
+        return t
+        # return {
+        #     "target": t,
+        #     "target_len": len(sentence),
+        #     "pad_len": pad_len,
+        # }
 
     def singleLoss(self, input_logits, target):
         assert input_logits.shape[0] == 1 
@@ -99,6 +138,8 @@ class CVDataset():
         self.processor = processor
         self.target_sample_rate = processor.feature_extractor.sampling_rate
 
+        self.resamplers = {}
+
     def _load_dataset(self, phase, root="_cv_corpus/en"):
         self._raw_datasets[phase] = torchaudio.datasets.COMMONVOICE(
             root=root,
@@ -116,10 +157,49 @@ class CVDataset():
 
         for datum in self._raw_datasets[phase]:
             yield self.process_raw_data_item(datum)
+
+    def batch_dataloader(self, phase, batch_size=4):
+        if(self._raw_datasets[phase] == None):
+            self._load_dataset(phase)
+
+        batch_wavs = []
+        batch_sentences = []
+
+        for datum in self._raw_datasets[phase]:
+            wav, sr, metadata = self.resample(datum)
+            print(wav.shape)
+            batch_wavs.append(wav)
+            batch_sentences.append(metadata["sentence"])
+            if len(batch_wavs) >= batch_size:
+                yield {
+                    "input_values": self.process_batch_wavs(batch_wavs),
+                    "sentences": batch_sentences
+                }
+                batch_wavs = []
+                batch_sentences = []
+    
+    def resample(self, datum):
+        in_wav, in_sample_rate, metadata = datum
+        resampler = self.resamplers.get(in_sample_rate, None)
+        if resampler is None:
+            resampler = torchaudio.transforms.Resample(in_sample_rate, self.target_sample_rate, dtype=in_wav.dtype)
+
+        return resampler(in_wav)[0][:1000], self.target_sample_rate, metadata
+
+    def process_batch_wavs(self, batch_wavs):
+        features = self.processor(
+            batch_wavs, 
+            sampling_rate=self.target_sample_rate, 
+            return_tensors="pt",
+            padding=True,
+        )
+        return features.input_values
+
         
     def process_raw_data_item(self, datum):
         raw_wav, in_sample_rate, metadata = datum
         resampled_wav = torchaudio.functional.resample(raw_wav, in_sample_rate, self.target_sample_rate)
+        print(resampled_wav.shape)
         features = self.processor(
             resampled_wav[0], 
             sampling_rate=self.target_sample_rate, 
@@ -128,6 +208,5 @@ class CVDataset():
         )
         return {
             "input_values": features.input_values,
-            "wav": resampled_wav,
             "sentence": metadata["sentence"]
         }
