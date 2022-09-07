@@ -28,8 +28,12 @@ class ASRTrainer():
 
     def predict_argmax(self, input_values):
         logits = self.get_logits(input_values)
+        return self.predict_argmax_from_logits(logits)
+
+    def predict_argmax_from_logits(self, logits):
         pred_ids = self.pred_ids_from_logits(logits)
         return self.processor.batch_decode(pred_ids)[0]
+
 
 class CTCLoss():
     def __init__(self, vocab="vocab.json"):
@@ -40,7 +44,8 @@ class CTCLoss():
 
         self.test_vocab()
         assert self.vocab["<pad>"] == 0
-        self.torch_loss = torch.nn.CTCLoss(blank=0)
+        self.torch_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
+        self.unk = self.vocab["<unk>"]
 
     def test_vocab(self):
         number_of_classes = len(self.vocab)
@@ -78,9 +83,16 @@ class CTCLoss():
         loss = self.torch_loss(inp.log_softmax(2), target["target"], input_lengths, target_lengths)
         return loss
 
+    def backward(self):
+        self.torch_loss.backward()
+
 class CVDataset():
     def __init__(self, processor):
         self._raw_datasets = {
+            "train": None,
+            "test": None,
+        }
+        self.dataset_sizes = {
             "train": None,
             "test": None,
         }
@@ -92,6 +104,11 @@ class CVDataset():
             root=root,
             tsv=f"{phase}.tsv",
         )
+        self.dataset_sizes[phase] = len(self._raw_datasets[phase])
+
+    def preload_datasets(self):
+        for phase in self._raw_datasets:
+            self._load_dataset(phase)
     
     def single_dataloader(self, phase):
         if(self._raw_datasets[phase] == None):
