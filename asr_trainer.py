@@ -50,7 +50,7 @@ class ASRTrainer():
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(model_name).to(self.device)
         if torch.cuda.is_available():
-            model= nn.DataParallel(model)
+            self.model = nn.DataParallel(self.model)
 
     def get_logits(self, input_values, grad=False):
         with torch.set_grad_enabled(grad):
