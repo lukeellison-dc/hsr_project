@@ -1,3 +1,4 @@
 _cv_corpus/*
 .DS_Store
 __pycache__/*
+models/*.pt

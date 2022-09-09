@@ -1,3 +1,4 @@
+from importlib.metadata import metadata
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -16,32 +17,40 @@ def td_string(td):
     return f'{td // 60:.0f}m {td % 60:.0f}s'
 
 def progress(iterator, total, prefix='', every=20):
+    def log(i):
+        perc = i*1.0/total
+        time_elapsed = time.time() - loop_start
+        t_per_it = time_elapsed*1.0 / i
+        its_remaining = total - i
+        t_remaining = its_remaining * t_per_it
+        print(f'{prefix}{i}/{total} = {perc:.2f}% -- ETA = {td_string(t_remaining)}')
+
     i = 0
     loop_start = time.time()
     for x in iterator:
         yield x
         i+=1
         if i % every == 0:
-            perc = i*1.0/total
-            time_elapsed = time.time() - loop_start
-            t_per_it = time_elapsed*1.0 / i
-            its_remaining = total - i
-            t_remaining = its_remaining * t_per_it
-            print(f'{prefix}{i}/{total} = {perc:.2f}% -- ETA = {td_string(t_remaining)}')
+            log(i)
+    log(i)
 
 class ASRTrainer():
-    def __init__(self, device=None):
+    def __init__(self, name, device=None):
         torch.random.manual_seed(0)
 
         self.device = device
+        self.name = name
         if self.device == None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                
 
     def load_model(self, model_name="facebook/wav2vec2-base-960h"):
         print(f"Loading model '{model_name}' to device '{self.device}'")
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(model_name).to(self.device)
+        if torch.cuda.is_available():
+            model= nn.DataParallel(model)
 
     def get_logits(self, input_values, grad=False):
         with torch.set_grad_enabled(grad):
@@ -64,13 +73,13 @@ class ASRTrainer():
         wer = WER()
         since = time.time()
 
-        best_model_wts = copy.deepcopy(self.model.state_dict())
+        self.best_model_wts = copy.deepcopy(self.model.state_dict())
         best_wer = 100.0
         best_loss = 10000.0
         losses = []
+        wers = []
 
-
-        for epoch in progress(range(num_epochs), total=num_epochs, prefix='- epochs: ', every=1):
+        for epoch in progress(range(num_epochs), total=num_epochs, prefix='epochs: ', every=1):
             print('-' * 10)
             print(f'Epoch {epoch + 1}/{num_epochs}')
             print('-' * 10)
@@ -89,7 +98,7 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
-                for d in progress(loader, total=total, every=1):
+                for d in progress(loader, total=total, prefix='batch: ', every=1): #TODO change every here
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -122,21 +131,34 @@ class ASRTrainer():
                 print('-' * 10)
                 print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
 
-                # deep copy the model
-                if phase == 'test' and epoch_wer < best_wer:
-                    best_wer = epoch_wer
-                    best_model_wts = copy.deepcopy(self.model.state_dict())
-                if phase == 'test' and epoch_loss < best_loss:
-                    best_loss = epoch_loss
+                if phase == 'test':
+                    losses.append(epoch_loss)
+                    wers.append(epoch_wer)
+                    # deep copy the model
+                    if epoch_wer < best_wer:
+                        best_wer = epoch_wer
+                        self.best_model_wts = copy.deepcopy(self.model.state_dict())
+                        print(f'New best found, saving...')
+                        self.save()
+                    if epoch_loss < best_loss:
+                        best_loss = epoch_loss
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
         print(f'Best Loss: {best_loss:4f}')
         print(f'Best WER: {best_wer:4f}')
+        print(f'All losses: {losses}')
+        print(f'All WERs: {wers}')
 
         # load best model weights
-        self.model.load_state_dict(best_model_wts)
+        self.model.load_state_dict(self.best_model_wts)
         return self.model
+
+    def save(self):
+        path = f'./models/{self.name}_model.pt'
+        if self.best_model_wts:
+            torch.save(self.best_model_wts, path)
+
 
 class CTCLoss(nn.Module):
     """Convenient wrapper for CTCLoss that handles log_softmax and taking input/target lengths."""
@@ -161,8 +183,8 @@ class CTCLoss(nn.Module):
         Returns:
             torch.Tensor: Loss scalar.
         """
-        print(preds.shape)
-        print(targets.shape)
+        # print(preds.shape)
+        # print(targets.shape)
         preds = preds.log_softmax(-1)
         batch, seq_len, classes = preds.shape
         preds = rearrange(preds, "n t c -> t n c") # since ctc_loss needs (T, N, C) inputs
@@ -227,7 +249,7 @@ class TargetCreator():
         self.torch_loss.backward()
 
 class CVDataset():
-    def __init__(self, processor):
+    def __init__(self, processor, filters={}):
         self._raw_datasets = {
             "train": None,
             "test": None,
@@ -236,6 +258,7 @@ class CVDataset():
             "train": None,
             "test": None,
         }
+        self.filters = filters
         self.processor = processor
         self.target_sample_rate = processor.feature_extractor.sampling_rate
 
@@ -246,12 +269,29 @@ class CVDataset():
             root=root,
             tsv=f"{phase}.tsv",
         )
-        # self.dataset_sizes[phase] = len(self._raw_datasets[phase])
-        self.dataset_sizes[phase] = 50
+        self.dataset_sizes[phase] = len(self._raw_datasets[phase])
+        if len(self.filters) > 0:
+            self.dataset_sizes[phase] = sum(1 for dummy in self._filtered_ds(phase, log_prog=True))
+        print(f'{phase} dataset size = {self.dataset_sizes[phase]}')
+        self.dataset_sizes[phase] = 20
 
     def preload_datasets(self):
+        print('Preloading datasets...')
         for phase in self._raw_datasets:
             self._load_dataset(phase)
+        print('Preloading Complete.')
+
+    def _filtered_ds(self, phase, log_prog=False):
+        if(self._raw_datasets[phase] == None):
+            self._load_dataset(phase)
+        
+        i = 0
+        iterator = progress(self._raw_datasets[phase], total=len(self._raw_datasets[phase]), every=10000) if log_prog else self._raw_datasets[phase]
+        for datum in iterator:
+            _, _, metadata = datum
+            for key,val in self.filters.items():
+                if metadata[key] == val:
+                    yield datum
     
     def single_dataloader(self, phase):
         if(self._raw_datasets[phase] == None):
@@ -268,7 +308,8 @@ class CVDataset():
         batch_sentences = []
 
         i = 0
-        for datum in self._raw_datasets[phase]:
+        iterator = self._filtered_ds(phase) if len(self.filters) else self._raw_datasets[phase]
+        for datum in iterator:
             wav, sr, metadata = self.resample(datum)
             batch_wavs.append(wav)
             batch_sentences.append(metadata["sentence"])
@@ -280,7 +321,7 @@ class CVDataset():
                 }
                 batch_wavs = []
                 batch_sentences = []
-            if i == 50: break
+            if i == 20: break
         yield {
             "input_values": self.process_batch_wavs(batch_wavs),
             "sentences": batch_sentences
