@@ -98,7 +98,7 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
-                for d in progress(loader, total=total, prefix='batch: ', every=1): #TODO change every here
+                for d in progress(loader, total=total, prefix='batch: ', every=200): #TODO change every here
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
