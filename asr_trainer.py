@@ -104,15 +104,15 @@ class ASRTrainer():
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-                    print(f'sentence = {d["sentences"][0]}')
-                    print(f'pred = {pred[0]}')
+                    # print(f'sentence = {d["sentences"][0]}')
+                    # print(f'pred = {pred[0]}')
 
                     gt_sents += d["sentences"]
                     pred_sents += pred
 
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(self.device)
                     loss = ctc_loss(logits, targets)
-                    print(f'loss = {loss.item()}')
+                    # print(f'loss = {loss.item()}')
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -273,7 +273,7 @@ class CVDataset():
         if len(self.filters) > 0:
             self.dataset_sizes[phase] = sum(1 for dummy in self._filtered_ds(phase, log_prog=True))
         print(f'{phase} dataset size = {self.dataset_sizes[phase]}')
-        self.dataset_sizes[phase] = 20
+        # self.dataset_sizes[phase] = 20
 
     def preload_datasets(self):
         print('Preloading datasets...')
@@ -307,13 +307,13 @@ class CVDataset():
         batch_wavs = []
         batch_sentences = []
 
-        i = 0
+        # i = 0
         iterator = self._filtered_ds(phase) if len(self.filters) else self._raw_datasets[phase]
         for datum in iterator:
             wav, sr, metadata = self.resample(datum)
             batch_wavs.append(wav)
             batch_sentences.append(metadata["sentence"])
-            i += 1
+            # i += 1
             if len(batch_wavs) >= batch_size:
                 yield {
                     "input_values": self.process_batch_wavs(batch_wavs),
@@ -321,7 +321,7 @@ class CVDataset():
                 }
                 batch_wavs = []
                 batch_sentences = []
-            if i == 20: break
+            # if i == 20: break
         yield {
             "input_values": self.process_batch_wavs(batch_wavs),
             "sentences": batch_sentences
