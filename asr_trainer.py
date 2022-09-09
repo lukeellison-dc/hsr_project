@@ -7,6 +7,27 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 import json
 import re
+import time
+import copy
+import jiwer
+
+#### util funcs
+def td_string(td):
+    return f'{td // 60:.0f}m {td % 60:.0f}s'
+
+def progress(iterator, total, prefix='', every=20):
+    i = 0
+    loop_start = time.time()
+    for x in iterator:
+        yield x
+        i+=1
+        if i % every == 0:
+            perc = i*1.0/total
+            time_elapsed = time.time() - loop_start
+            t_per_it = time_elapsed*1.0 / i
+            its_remaining = total - i
+            t_remaining = its_remaining * t_per_it
+            print(f'{prefix}{i}/{total} = {perc:.2f}% -- ETA = {td_string(t_remaining)}')
 
 class ASRTrainer():
     def __init__(self, device=None):
@@ -36,6 +57,86 @@ class ASRTrainer():
     def predict_argmax_from_logits(self, logits):
         pred_ids = self.pred_ids_from_logits(logits)
         return self.processor.batch_decode(pred_ids)
+
+    def train(self, cvdataset, optimizer, scheduler, num_epochs=25, batch_size=64):
+        target_creator = TargetCreator()
+        ctc_loss = CTCLoss()
+        wer = WER()
+        since = time.time()
+
+        best_model_wts = copy.deepcopy(self.model.state_dict())
+        best_wer = 100.0
+        best_loss = 10000.0
+        losses = []
+
+
+        for epoch in progress(range(num_epochs), total=num_epochs, prefix='- epochs: ', every=1):
+            print('-' * 10)
+            print(f'Epoch {epoch + 1}/{num_epochs}')
+            print('-' * 10)
+
+            # Each epoch has a training and validation phase
+            for phase in ['train', 'test']:
+                if phase == 'train':
+                    self.model.train()  # Set model to training mode
+                else:
+                    self.model.eval()   # Set model to evaluate mode
+
+                running_loss = 0.0
+                gt_sents = []
+                pred_sents = []
+
+                # Iterate over data.
+                loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
+                total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
+                for d in progress(loader, total=total, every=1):
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+
+                    logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
+                    pred = self.predict_argmax_from_logits(logits)
+                    print(f'sentence = {d["sentences"][0]}')
+                    print(f'pred = {pred[0]}')
+
+                    gt_sents += d["sentences"]
+                    pred_sents += pred
+
+                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(self.device)
+                    loss = ctc_loss(logits, targets)
+                    print(f'loss = {loss.item()}')
+
+                    # backward + optimize only if in training phase
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                    # statistics
+                    running_loss += loss.item() * d["input_values"].size(0)
+
+                if phase == 'train':
+                    scheduler.step()
+
+                epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
+                epoch_wer = wer.wer(gt_sents, pred_sents)
+
+                print('-' * 10)
+                print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
+
+                # deep copy the model
+                if phase == 'test' and epoch_wer < best_wer:
+                    best_wer = epoch_wer
+                    best_model_wts = copy.deepcopy(self.model.state_dict())
+                if phase == 'test' and epoch_loss < best_loss:
+                    best_loss = epoch_loss
+
+        time_elapsed = time.time() - since
+        print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
+        print(f'Best Loss: {best_loss:4f}')
+        print(f'Best WER: {best_wer:4f}')
+
+        # load best model weights
+        self.model.load_state_dict(best_model_wts)
+        return self.model
 
 class CTCLoss(nn.Module):
     """Convenient wrapper for CTCLoss that handles log_softmax and taking input/target lengths."""
@@ -80,7 +181,7 @@ class TargetCreator():
         with open("vocab.json", "r") as fp:
             self.vocab = json.load(fp)
 
-        self.test_vocab()
+        # self.test_vocab()
         assert self.vocab["<pad>"] == 0
         self.torch_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
         self.unk = self.vocab["<unk>"]
@@ -94,7 +195,7 @@ class TargetCreator():
             except Exception as e:
                 print(f"Could not remove '{x}'")
                 print(f"Remaining classes: '{classes}'")
-                raise e                
+                raise e
 
         assert len(classes) == 0
             
@@ -145,7 +246,8 @@ class CVDataset():
             root=root,
             tsv=f"{phase}.tsv",
         )
-        self.dataset_sizes[phase] = len(self._raw_datasets[phase])
+        # self.dataset_sizes[phase] = len(self._raw_datasets[phase])
+        self.dataset_sizes[phase] = 50
 
     def preload_datasets(self):
         for phase in self._raw_datasets:
@@ -165,10 +267,12 @@ class CVDataset():
         batch_wavs = []
         batch_sentences = []
 
+        i = 0
         for datum in self._raw_datasets[phase]:
             wav, sr, metadata = self.resample(datum)
             batch_wavs.append(wav)
             batch_sentences.append(metadata["sentence"])
+            i += 1
             if len(batch_wavs) >= batch_size:
                 yield {
                     "input_values": self.process_batch_wavs(batch_wavs),
@@ -176,6 +280,11 @@ class CVDataset():
                 }
                 batch_wavs = []
                 batch_sentences = []
+            if i == 50: break
+        yield {
+            "input_values": self.process_batch_wavs(batch_wavs),
+            "sentences": batch_sentences
+        }
     
     def resample(self, datum):
         in_wav, in_sample_rate, metadata = datum
@@ -212,3 +321,17 @@ class CVDataset():
             "input_values": features.input_values,
             "sentence": metadata["sentence"]
         }
+
+class WER():
+    def __init__(self) -> None:
+        self.transformation = jiwer.Compose([
+            jiwer.ToLowerCase(),
+            jiwer.ExpandCommonEnglishContractions(),
+            jiwer.RemovePunctuation(),
+            jiwer.RemoveWhiteSpace(replace_by_space=True),
+            jiwer.RemoveMultipleSpaces(),
+            jiwer.ReduceToListOfListOfWords(word_delimiter=" ")
+        ]) 
+    
+    def wer(self, truths, preds):
+        return jiwer.wer(truths, preds, truth_transform=self.transformation, hypothesis_transform=self.transformation)
