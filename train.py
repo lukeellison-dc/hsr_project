@@ -63,14 +63,14 @@ def train_model(trainer, optimizer, scheduler, num_epochs=25):
 
                 logits = trainer.get_logits(d["input_values"], grad=(phase == 'train'))
                 pred = trainer.predict_argmax_from_logits(logits)
-                print(f'sentence = {d["sentence"][0]}')
+                print(f'sentence = {d["sentences"][0]}')
                 print(f'pred = {pred[0]}')
 
-                wer = torchaudio.functional.edit_distance(d["sentence"], pred)
+                wer = torchaudio.functional.edit_distance(d["sentences"], pred)
                 print(f'wer = {wer}')
 
-                target = target_creator.sentence_to_target(d["sentence"])
-                loss = ctc_loss(logits, target)
+                targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(trainer.device)
+                loss = ctc_loss(logits, targets)
                 print(f'loss = {loss.item()}')
 
                 # backward + optimize only if in training phase

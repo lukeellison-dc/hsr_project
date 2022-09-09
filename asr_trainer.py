@@ -158,7 +158,7 @@ class CVDataset():
         for datum in self._raw_datasets[phase]:
             yield self.process_raw_data_item(datum)
 
-    def batch_dataloader(self, phase, batch_size=4):
+    def batch_dataloader(self, phase, batch_size=32):
         if(self._raw_datasets[phase] == None):
             self._load_dataset(phase)
 
@@ -167,7 +167,6 @@ class CVDataset():
 
         for datum in self._raw_datasets[phase]:
             wav, sr, metadata = self.resample(datum)
-            print(wav.shape)
             batch_wavs.append(wav)
             batch_sentences.append(metadata["sentence"])
             if len(batch_wavs) >= batch_size:
@@ -184,28 +183,31 @@ class CVDataset():
         if resampler is None:
             resampler = torchaudio.transforms.Resample(in_sample_rate, self.target_sample_rate, dtype=in_wav.dtype)
 
-        return resampler(in_wav)[0][:1000], self.target_sample_rate, metadata
+        return resampler(in_wav)[0], self.target_sample_rate, metadata
 
     def process_batch_wavs(self, batch_wavs):
-        features = self.processor(
-            batch_wavs, 
-            sampling_rate=self.target_sample_rate, 
-            return_tensors="pt",
-            padding=True,
-        )
-        return features.input_values
+        vals = []
+        for x in batch_wavs:
+            features = self.processor(
+                x, 
+                sampling_rate=self.target_sample_rate, 
+                return_tensors="pt",
+            )
+            vals.append(features.input_values.t())
+        input_values = torch.nn.utils.rnn.pad_sequence(vals, batch_first=True).squeeze()
+        return input_values
 
         
     def process_raw_data_item(self, datum):
         raw_wav, in_sample_rate, metadata = datum
         resampled_wav = torchaudio.functional.resample(raw_wav, in_sample_rate, self.target_sample_rate)
-        print(resampled_wav.shape)
         features = self.processor(
             resampled_wav[0], 
             sampling_rate=self.target_sample_rate, 
             return_tensors="pt",
             padding=True
         )
+
         return {
             "input_values": features.input_values,
             "sentence": metadata["sentence"]
