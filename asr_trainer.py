@@ -113,7 +113,10 @@ class ASRTrainer():
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(self.device)
                     loss = ctc_loss(logits, targets)
                     # print(f'loss = {loss.item()}')
-                    print(torch.cuda.memory_allocated())
+                    del targets
+                    del logits
+                    del d["input_values"]
+                    print(torch.cuda.max_memory_reserved())
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
