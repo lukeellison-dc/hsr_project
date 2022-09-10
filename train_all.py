@@ -1,9 +1,6 @@
 from asr_trainer import ASRTrainer, CVDataset
 import torch
 
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
-
 for method in ['full', 'female', 'male']:
     trainer = ASRTrainer(name=method)
     trainer.load_model()

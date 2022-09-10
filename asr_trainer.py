@@ -98,7 +98,7 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
-                for d in progress(loader, total=total, prefix='batch: ', every=200): #TODO change every here
+                for d in progress(loader, total=total, prefix='batch: ', every=20):
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -113,6 +113,7 @@ class ASRTrainer():
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(self.device)
                     loss = ctc_loss(logits, targets)
                     # print(f'loss = {loss.item()}')
+                    print(torch.cuda.memory_allocated())
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
