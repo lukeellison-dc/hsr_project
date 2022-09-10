@@ -49,8 +49,8 @@ class ASRTrainer():
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(model_name).to(self.device)
-        # if torch.cuda.is_available():
-        #     self.model = nn.DataParallel(self.model)
+        if torch.cuda.is_available():
+            self.model = nn.DataParallel(self.model)
 
     def get_logits(self, input_values, grad=False):
         with torch.set_grad_enabled(grad):
@@ -110,7 +110,7 @@ class ASRTrainer():
                     gt_sents += d["sentences"]
                     pred_sents += pred
 
-                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]).to(self.device)
+                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]) #.to(self.device)
                     loss = ctc_loss(logits, targets)
                     # print(f'loss = {loss.item()}')
 
@@ -125,7 +125,7 @@ class ASRTrainer():
                     # i += 1
                     # if i % 20 == 0:
                     #     torch.cuda.empty_cache()
-                    # print(torch.cuda.max_memory_reserved())
+                    print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
