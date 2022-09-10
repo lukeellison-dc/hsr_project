@@ -102,8 +102,6 @@ class ASRTrainer():
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
-                    print(d["input_values"].shape)
-
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
                     # print(f'sentence = {d["sentences"][0]}')
