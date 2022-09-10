@@ -225,12 +225,13 @@ class TargetCreator():
 
         assert len(classes) == 0
             
-    def sentence_to_target(self, sentence, pad_len=300):
+    def sentence_to_target(self, sentence, pad_len=400):
         sentence = sentence.upper()
         sentence = self.re_chars_to_remove.sub('', sentence).replace(' ', '|')
         t = torch.zeros([1, pad_len], dtype=torch.int)
         for i,x in enumerate(sentence):
-            t[0][i] = self.vocab[x]
+            if i < pad_len:
+                t[0][i] = self.vocab[x]
         return t
         # return {
         #     "target": t,
