@@ -102,6 +102,7 @@ class ASRTrainer():
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
+                    print(d["input_values"].shape)
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
                     # print(f'sentence = {d["sentences"][0]}')
@@ -122,9 +123,6 @@ class ASRTrainer():
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
 
-                    # i += 1
-                    # if i % 20 == 0:
-                    #     torch.cuda.empty_cache()
                     print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
@@ -350,6 +348,7 @@ class CVDataset():
             )
             vals.append(features.input_values.t())
         input_values = torch.nn.utils.rnn.pad_sequence(vals, batch_first=True).squeeze()
+        del vals
         return input_values
 
         
