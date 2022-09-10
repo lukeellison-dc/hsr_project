@@ -49,8 +49,8 @@ class ASRTrainer():
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(model_name).to(self.device)
-        if torch.cuda.is_available():
-            self.model = nn.DataParallel(self.model)
+        # if torch.cuda.is_available():
+        #     self.model = nn.DataParallel(self.model)
 
     def get_logits(self, input_values, grad=False):
         with torch.set_grad_enabled(grad):
@@ -98,7 +98,6 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
-                i=0
                 for d in progress(loader, total=total, prefix='batch: ', every=20):
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -123,10 +122,10 @@ class ASRTrainer():
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
 
-                    i += 1
-                    if i % 20 == 0:
-                        torch.cuda.empty_cache()
-                    print(torch.cuda.max_memory_reserved())
+                    # i += 1
+                    # if i % 20 == 0:
+                    #     torch.cuda.empty_cache()
+                    # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
