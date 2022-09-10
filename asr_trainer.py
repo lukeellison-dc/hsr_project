@@ -311,22 +311,23 @@ class CVDataset():
         batch_wavs = []
         batch_sentences = []
 
-        # i = 0
+        i = 0
         iterator = self._filtered_ds(phase) if len(self.filters) else self._raw_datasets[phase]
         for datum in iterator:
             wav, sr, metadata = self.resample(datum)
-            batch_wavs.append(wav)
-            batch_sentences.append(metadata["sentence"])
-            # i += 1
-            if len(batch_wavs) >= batch_size:
+            if wav.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
+                batch_wavs.append(wav)
+                batch_sentences.append(metadata["sentence"])
+            i += 1
+            if i >= batch_size:
                 input_values = self.process_batch_wavs(batch_wavs)
-
                 yield {
                     "input_values": self.process_batch_wavs(batch_wavs),
                     "sentences": batch_sentences
                 }
                 batch_wavs = []
                 batch_sentences = []
+                i = 0
             # if i == 20: break
         yield {
             "input_values": self.process_batch_wavs(batch_wavs),
@@ -344,13 +345,12 @@ class CVDataset():
     def process_batch_wavs(self, batch_wavs):
         vals = []
         for x in batch_wavs:
-            if x.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
-                features = self.processor(
-                    x, 
-                    sampling_rate=self.target_sample_rate, 
-                    return_tensors="pt",
-                )
-                vals.append(features.input_values.t())
+            features = self.processor(
+                x, 
+                sampling_rate=self.target_sample_rate, 
+                return_tensors="pt",
+            )
+            vals.append(features.input_values.t())
         input_values = torch.nn.utils.rnn.pad_sequence(vals, batch_first=True).squeeze()
         del vals
         return input_values
