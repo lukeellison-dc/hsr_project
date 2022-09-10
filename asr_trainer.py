@@ -103,6 +103,7 @@ class ASRTrainer():
                     optimizer.zero_grad()
 
                     print(d["input_values"].shape)
+
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
                     # print(f'sentence = {d["sentences"][0]}')
@@ -123,7 +124,7 @@ class ASRTrainer():
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
 
-                    print(torch.cuda.max_memory_reserved())
+                    # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
@@ -318,6 +319,8 @@ class CVDataset():
             batch_sentences.append(metadata["sentence"])
             # i += 1
             if len(batch_wavs) >= batch_size:
+                input_values = self.process_batch_wavs(batch_wavs)
+
                 yield {
                     "input_values": self.process_batch_wavs(batch_wavs),
                     "sentences": batch_sentences
@@ -341,12 +344,13 @@ class CVDataset():
     def process_batch_wavs(self, batch_wavs):
         vals = []
         for x in batch_wavs:
-            features = self.processor(
-                x, 
-                sampling_rate=self.target_sample_rate, 
-                return_tensors="pt",
-            )
-            vals.append(features.input_values.t())
+            if x.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
+                features = self.processor(
+                    x, 
+                    sampling_rate=self.target_sample_rate, 
+                    return_tensors="pt",
+                )
+                vals.append(features.input_values.t())
         input_values = torch.nn.utils.rnn.pad_sequence(vals, batch_first=True).squeeze()
         del vals
         return input_values
