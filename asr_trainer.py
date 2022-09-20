@@ -107,8 +107,8 @@ class ASRTrainer():
                     for i in range(len(pred)):
                         print(f'sentence = {d["sentences"][i]}')
                         print(f'pred = {pred[i]}')
-                        wer = wer.wer(d["sentences"][i], pred[i])
-                        print(f'wer = {wer}')
+                        w = wer.wer(d["sentences"][i], pred[i])
+                        print(f'wer = {w}')
 
 
                     gt_sents += d["sentences"]
