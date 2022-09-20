@@ -24,7 +24,7 @@ import torch
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
-trainer = ASRTrainer('tester')
+trainer = ASRTrainer(method)
 trainer.load_model()
 cvd = CVDataset(trainer.processor)
 if method == 'female':
