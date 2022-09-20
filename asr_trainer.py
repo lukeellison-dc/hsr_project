@@ -104,8 +104,12 @@ class ASRTrainer():
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-                    # print(f'sentence = {d["sentences"][0]}')
-                    # print(f'pred = {pred[0]}')
+                    for i in range(len(pred)):
+                        print(f'sentence = {d["sentences"][i]}')
+                        print(f'pred = {pred[i]}')
+                        wer = wer.wer(d["sentences"][i], pred[i])
+                        print(f'wer = {wer}')
+
 
                     gt_sents += d["sentences"]
                     pred_sents += pred
