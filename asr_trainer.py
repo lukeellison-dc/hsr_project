@@ -214,7 +214,8 @@ class CTCLoss(nn.Module):
 
 class TargetCreator():
     def __init__(self, vocab="vocab.json"):
-        self.re_chars_to_remove = re.compile(r"[^A-Z ']")
+        self.re_chars_to_remove = re.compile(r"[^\w\d\s]+")
+        self.re_whitespace = re.compile(r"\s+")
 
         with open("vocab.json", "r") as fp:
             self.vocab = json.load(fp)
@@ -239,7 +240,8 @@ class TargetCreator():
             
     def sentence_to_target(self, sentence, pad_len=400):
         sentence = sentence.upper()
-        sentence = self.re_chars_to_remove.sub('', sentence).replace(' ', '|')
+        sentence = self.re_chars_to_remove.sub('', sentence)
+        sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
         t = torch.zeros([1, pad_len], dtype=torch.int)
         for i,x in enumerate(sentence):
             if i < pad_len:
