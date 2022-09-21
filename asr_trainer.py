@@ -1,4 +1,5 @@
 from importlib.metadata import metadata
+import unicodedata
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -223,7 +224,7 @@ class CTCLoss(nn.Module):
 
 class TargetCreator():
     def __init__(self, vocab="vocab.json"):
-        self.re_chars_to_remove = re.compile(r"[^\w\d\s]+")
+        self.re_chars_to_remove = re.compile(r"[^A-Z\w]+")
         self.re_whitespace = re.compile(r"\s+")
 
         with open("vocab.json", "r") as fp:
@@ -248,6 +249,7 @@ class TargetCreator():
         assert len(classes) == 0
             
     def sentence_to_target(self, sentence, pad_len=400):
+        sentence = unicodedata.normalize('NFKD', sentence).encode('ascii', 'ignore')
         sentence = sentence.upper()
         sentence = self.re_chars_to_remove.sub('', sentence)
         sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
