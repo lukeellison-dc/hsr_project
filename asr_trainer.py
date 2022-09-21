@@ -134,6 +134,7 @@ class ASRTrainer():
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
 
+                    i+=1
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
