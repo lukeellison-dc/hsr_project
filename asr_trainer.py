@@ -249,7 +249,7 @@ class TargetCreator():
         assert len(classes) == 0
             
     def sentence_to_target(self, sentence, pad_len=400):
-        sentence = unicodedata.normalize('NFKD', sentence).encode('ascii', 'ignore')
+        sentence = unicodedata.normalize('NFKD', sentence)
         sentence = sentence.upper()
         sentence = self.re_chars_to_remove.sub('', sentence)
         sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
