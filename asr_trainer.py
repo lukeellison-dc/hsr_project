@@ -98,7 +98,9 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
-                for d in progress(loader, total=total, prefix='batch: ', every=20):
+                every = 20
+                i = 0
+                for d in progress(loader, total=total, prefix='batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -110,6 +112,12 @@ class ASRTrainer():
                     #     w = wer.wer(d["sentences"][i], pred[i])
                     #     print(f'wer = {w}')
 
+                    if i%every == 0:
+                        for i in range(2):
+                            print(f'- sentence[{i}] = {d["sentences"][i]}')
+                            print(f'- pred[{i}] = {pred[i]}')
+                        w = wer.wer(d["sentences"], pred)
+                        print(f'- wer = {w}')
 
                     gt_sents += d["sentences"]
                     pred_sents += pred
