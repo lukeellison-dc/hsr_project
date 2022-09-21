@@ -400,7 +400,7 @@ class WER():
             jiwer.ToLowerCase(),
             jiwer.ExpandCommonEnglishContractions(),
             jiwer.SubstituteRegexes({
-                r"[^\w\d\s]+", "",
+                r"[^\w\d\s]+": "",
             }),
             jiwer.RemoveWhiteSpace(replace_by_space=True),
             jiwer.RemoveMultipleSpaces(),
