@@ -249,12 +249,10 @@ class TargetCreator():
         assert len(classes) == 0
 
     def normalise(self, sentence):
-        # print(f'before = {sentence}')
         sentence = unicodedata.normalize('NFKD', sentence)
-        sentence = sentence.upper()
+        sentence = sentence.upper().replace('-', ' ')
         sentence = self.re_chars_to_remove.sub('', sentence)
         sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
-        # print(f'after = {sentence}')
         return sentence
             
     def sentence_to_target(self, sentence, pad_len=400):
