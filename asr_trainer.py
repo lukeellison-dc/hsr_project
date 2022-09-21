@@ -18,7 +18,7 @@ def td_string(td):
 
 def progress(iterator, total, prefix='', every=20):
     def log(i):
-        perc = i*1.0/total
+        perc = i*100.0/total
         time_elapsed = time.time() - loop_start
         t_per_it = time_elapsed*1.0 / i
         its_remaining = total - i
@@ -104,11 +104,11 @@ class ASRTrainer():
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-                    for i in range(len(pred)):
-                        print(f'sentence = {d["sentences"][i]}')
-                        print(f'pred = {pred[i]}')
-                        w = wer.wer(d["sentences"][i], pred[i])
-                        print(f'wer = {w}')
+                    # for i in range(len(pred)):
+                    #     print(f'sentence = {d["sentences"][i]}')
+                    #     print(f'pred = {pred[i]}')
+                    #     w = wer.wer(d["sentences"][i], pred[i])
+                    #     print(f'wer = {w}')
 
 
                     gt_sents += d["sentences"]
@@ -132,7 +132,17 @@ class ASRTrainer():
                     scheduler.step()
 
                 epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
-                epoch_wer = wer.wer(gt_sents, pred_sents)
+                epoch_wer = 1.0
+                try:
+                    epoch_wer = wer.wer(gt_sents, pred_sents)
+                except Exception as e:
+                    print(f'gt_sents len={len(gt_sents)}, pred_sents len={len(pred_sents)}')
+                    for i in range(len(gt_sents)):
+                        print(f'sentence = {gt_sents[i]}')
+                        print(f'pred = {pred_sents[i]}')
+                        w = wer.wer(gt_sents[i], pred_sents[i])
+                        print(f'wer = {w}')
+                    raise e
 
                 print('-' * 10)
                 print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
@@ -379,7 +389,9 @@ class WER():
         self.transformation = jiwer.Compose([
             jiwer.ToLowerCase(),
             jiwer.ExpandCommonEnglishContractions(),
-            jiwer.RemovePunctuation(),
+            jiwer.SubstituteRegexes({
+                r"[^\w\d\s]+", "",
+            }),
             jiwer.RemoveWhiteSpace(replace_by_space=True),
             jiwer.RemoveMultipleSpaces(),
             jiwer.ReduceToListOfListOfWords(word_delimiter=" ")
