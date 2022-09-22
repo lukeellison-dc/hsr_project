@@ -112,18 +112,19 @@ class ASRTrainer():
                     #     print(f'pred = {pred[i]}')
                     #     w = wer.wer(d["sentences"][i], pred[i])
                     #     print(f'wer = {w}')
+                    normalised_sents = [target_creator.normalise(x) for x in d["sentences"]]
 
                     if i%every == 0:
                         for i in range(2):
-                            print(f'- sentence[{i}] = {d["sentences"][i]}')
+                            print(f'- sentence[{i}] = {normalised_sents[i]}')
                             print(f'- pred[{i}] = {pred[i]}')
-                        w = wer.wer(d["sentences"], pred)
+                        w = wer.wer(normalised_sents, pred)
                         print(f'- wer = {w}')
 
-                    gt_sents += d["sentences"]
+                    gt_sents += normalised_sents
                     pred_sents += pred
 
-                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in d["sentences"]]) #.to(self.device)
+                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in normalised_sents]) #.to(self.device)
                     loss = ctc_loss(logits, targets)
                     # print(f'loss = {loss.item()}')
 
@@ -226,6 +227,7 @@ class TargetCreator():
     def __init__(self, vocab="vocab.json"):
         self.re_chars_to_remove = re.compile(r"[^A-Z\s]+")
         self.re_whitespace = re.compile(r"\s+")
+        # self.expandCommonEnglishContractions = jiwer.ExpandCommonEnglishContractions()
 
         with open("vocab.json", "r") as fp:
             self.vocab = json.load(fp)
@@ -252,11 +254,11 @@ class TargetCreator():
         sentence = unicodedata.normalize('NFKD', sentence)
         sentence = sentence.upper().replace('-', ' ')
         sentence = self.re_chars_to_remove.sub('', sentence)
-        sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
         return sentence
             
     def sentence_to_target(self, sentence, pad_len=400):
         sentence = self.normalise(sentence)
+        sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
         t = torch.zeros([1, pad_len], dtype=torch.int)
         for i,x in enumerate(sentence):
             if i < pad_len:
