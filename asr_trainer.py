@@ -148,11 +148,11 @@ class ASRTrainer():
                     epoch_wer = wer.wer(gt_sents, pred_sents)
                 except Exception as e:
                     print(f'gt_sents len={len(gt_sents)}, pred_sents len={len(pred_sents)}')
+                    setofchars = set()
                     for i in range(len(gt_sents)):
-                        print(f'sentence = {gt_sents[i]}')
-                        print(f'pred = {pred_sents[i]}')
-                        w = wer.wer(gt_sents[i], pred_sents[i])
-                        print(f'wer = {w}')
+                        setofchars.update(set(gt_sents[i]))
+                        setofchars.update(set(pred_sents[i]))
+                    print(f'count of chars = {len(setofchars)}')
                     raise e
 
                 print('-' * 10)
