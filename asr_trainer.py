@@ -101,6 +101,7 @@ class ASRTrainer():
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
                 every = 20
                 i = 0
+                total_wer = 0
                 for d in progress(loader, total=total, prefix='batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -121,8 +122,7 @@ class ASRTrainer():
                         w = wer.wer(normalised_sents, pred)
                         print(f'- wer = {w}')
 
-                    gt_sents += normalised_sents
-                    pred_sents += pred
+                    total_wer += wer.wer(normalised_sents, pred_sents)
 
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in normalised_sents]) #.to(self.device)
                     loss = ctc_loss(logits, targets)
@@ -137,23 +137,14 @@ class ASRTrainer():
                     running_loss += loss.item() * d["input_values"].size(0)
 
                     i+=1
+                    if(i == 10) break
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
 
                 epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
-                epoch_wer = 1.0
-                try:
-                    epoch_wer = wer.wer(gt_sents, pred_sents)
-                except Exception as e:
-                    print(f'gt_sents len={len(gt_sents)}, pred_sents len={len(pred_sents)}')
-                    setofchars = set()
-                    for i in range(len(gt_sents)):
-                        setofchars.update(set(gt_sents[i]))
-                        setofchars.update(set(pred_sents[i]))
-                    print(f'count of chars = {len(setofchars)}')
-                    raise e
+                epoch_wer = total_wer / i
 
                 print('-' * 10)
                 print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
