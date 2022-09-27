@@ -137,7 +137,7 @@ class ASRTrainer():
                     running_loss += loss.item() * d["input_values"].size(0)
 
                     i+=1
-                    if(i == 10) break
+                    if(i == 10): break
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
