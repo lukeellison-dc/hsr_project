@@ -93,15 +93,13 @@ class ASRTrainer():
                     self.model.eval()   # Set model to evaluate mode
 
                 running_loss = 0.0
-                gt_sents = []
-                pred_sents = []
+                running_wer = 0
 
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
                 every = 20
                 i = 0
-                total_wer = 0
                 for d in progress(loader, total=total, prefix='batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -122,7 +120,7 @@ class ASRTrainer():
                         w = wer.wer(normalised_sents, pred)
                         print(f'- wer = {w}')
 
-                    total_wer += wer.wer(normalised_sents, pred_sents)
+                    running_wer += wer.wer(normalised_sents, pred)
 
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in normalised_sents]) #.to(self.device)
                     loss = ctc_loss(logits, targets)
@@ -137,14 +135,13 @@ class ASRTrainer():
                     running_loss += loss.item() * d["input_values"].size(0)
 
                     i+=1
-                    if(i == 10): break
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
 
                 epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
-                epoch_wer = total_wer / i
+                epoch_wer = running_wer / i
 
                 print('-' * 10)
                 print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
