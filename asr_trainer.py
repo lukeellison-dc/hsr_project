@@ -12,6 +12,8 @@ import re
 import time
 import copy
 import jiwer
+import statistics
+
 
 #### util funcs
 def td_string(td):
@@ -74,7 +76,6 @@ class ASRTrainer():
         wer = WER()
         since = time.time()
 
-        self.best_model_wts = copy.deepcopy(self.model.state_dict())
         best_wer = 100.0
         best_loss = 10000.0
         losses = []
@@ -93,24 +94,19 @@ class ASRTrainer():
                     self.model.eval()   # Set model to evaluate mode
 
                 running_loss = 0.0
-                running_wer = 0
+                running_wers = []
 
                 # Iterate over data.
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
                 every = 20
                 i = 0
-                for d in progress(loader, total=total, prefix='batch: ', every=every):
+                for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-                    # for i in range(len(pred)):
-                    #     print(f'sentence = {d["sentences"][i]}')
-                    #     print(f'pred = {pred[i]}')
-                    #     w = wer.wer(d["sentences"][i], pred[i])
-                    #     print(f'wer = {w}')
                     normalised_sents = [target_creator.normalise(x) for x in d["sentences"]]
 
                     if i%every == 0:
@@ -120,7 +116,6 @@ class ASRTrainer():
                         w = wer.wer(normalised_sents, pred)
                         print(f'- wer = {w}')
 
-                    running_wer += wer.wer(normalised_sents, pred)
 
                     targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in normalised_sents]) #.to(self.device)
                     loss = ctc_loss(logits, targets)
@@ -133,15 +128,18 @@ class ASRTrainer():
 
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
+                    running_wers.append(wer.wer(normalised_sents, pred))
 
                     i+=1
+                    if i > 200:
+                        break
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
 
                 epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
-                epoch_wer = running_wer / i
+                epoch_wer = statistics.fmean(running_wers)
 
                 print('-' * 10)
                 print(f'{phase} Loss: {epoch_loss:.4f} WER: {epoch_wer:.4f}')
@@ -151,10 +149,9 @@ class ASRTrainer():
                     wers.append(epoch_wer)
                     # deep copy the model
                     if epoch_wer < best_wer:
-                        best_wer = epoch_wer
-                        self.best_model_wts = copy.deepcopy(self.model.state_dict())
                         print(f'New best found, saving...')
-                        self.save()
+                        best_wer = epoch_wer
+                        self.save(self.model.state_dict())
                     if epoch_loss < best_loss:
                         best_loss = epoch_loss
 
@@ -165,14 +162,10 @@ class ASRTrainer():
         print(f'All losses: {losses}')
         print(f'All WERs: {wers}')
 
-        # load best model weights
-        self.model.load_state_dict(self.best_model_wts)
-        return self.model
-
-    def save(self):
+    def save(self, wts):
         path = f'./models/{self.name}_model.pt'
-        if self.best_model_wts:
-            torch.save(self.best_model_wts, path)
+        if wts:
+            torch.save(wts, path)
 
 
 class CTCLoss(nn.Module):
