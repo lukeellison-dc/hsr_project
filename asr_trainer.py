@@ -109,7 +109,7 @@ class ASRTrainer():
                     pred = self.predict_argmax_from_logits(logits)
                     normalised_sents = [target_creator.normalise(x) for x in d["sentences"]]
 
-                    if i%every == 0:
+                    if batch_i%every == 0:
                         for i in range(2):
                             print(f'- sentence[{i}] = {normalised_sents[i]}')
                             print(f'- pred[{i}] = {pred[i]}')
