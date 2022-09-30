@@ -100,7 +100,7 @@ class ASRTrainer():
                 loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
                 total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
                 every = 20
-                i = 0
+                batch_i = 0
                 for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -130,8 +130,8 @@ class ASRTrainer():
                     running_loss += loss.item() * d["input_values"].size(0)
                     running_wers.append(wer.wer(normalised_sents, pred))
 
-                    i+=1
-                    if i > 200:
+                    batch_i+=1
+                    if batch_i > 60:
                         break
                     # print(torch.cuda.max_memory_reserved())
 
