@@ -51,11 +51,14 @@ class TargetCreator():
     def sentence_to_target(self, sentence, pad_len=400):
         sentence = sentence.replace(' ', '|') #replace all whitespace with |
         t = torch.zeros([1, pad_len], dtype=torch.int)
+        longer = False
         for i,x in enumerate(sentence):
             if i < pad_len:
                 t[0][i] = self.vocab[x]
             else:
-                raise Exception("longer than pad len")
+                longer = True
+        if longer:
+            print(f'Setence longer than pad len with len={len(sentence)}:\n"{sentence}"')
         return t
 
 rs = Resampler()

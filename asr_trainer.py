@@ -131,8 +131,8 @@ class ASRTrainer():
                     running_wers.append(wer.wer(normalised_sents, pred))
 
                     batch_i+=1
-                    if batch_i > 60:
-                        break
+                    # if batch_i > 60:
+                    #     break
                     # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
