@@ -85,12 +85,13 @@ for gender in ['mixed', 'male', 'female']:
         for i,row in tqdm(df.iterrows(), total=len(df), mininterval=5):
             wav, sr = proc.load(f'_cv_corpus/en/clips/{row["path"]}')
             wav = proc.resample(wav, sr)
-            input_features = proc.extract_features(wav)
-            data['input_features'].append(input_features)
+            if wav.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
+                input_features = proc.extract_features(wav)
+                data['input_features'].append(input_features)
 
-            data['sentences'].append(row['sentence'])
-            target = tc.sentence_to_target(row['sentence'], pad_len)[0]
-            data['targets'][i] = tc.sentence_to_target(row['sentence'], pad_len)[0]
+                data['sentences'].append(row['sentence'])
+                target = tc.sentence_to_target(row['sentence'], pad_len)[0]
+                data['targets'][i] = tc.sentence_to_target(row['sentence'], pad_len)[0]
 
         with lzma.open(f'_cv_corpus/en/processed/{gender}/{phase}.xz','wb') as outfile:
             pickle.dump(data, outfile)
