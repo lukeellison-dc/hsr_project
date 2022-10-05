@@ -28,7 +28,7 @@ class Processor():
             sampling_rate=self.target_sample_rate, 
             return_tensors="pt",
         )
-        return features.input_values
+        return features.input_values[0]
 
     def load(self, path):
         waveform, sample_rate = torchaudio.load(path)
