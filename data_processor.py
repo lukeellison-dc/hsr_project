@@ -5,7 +5,7 @@ import json
 import torch
 from tqdm import tqdm
 import pickle
-import bz2
+import lzma
 
 class Resampler():
     def __init__(self) -> None:
@@ -83,5 +83,5 @@ for gender in ['mixed', 'male', 'female']:
             target = tc.sentence_to_target(row['sentence'], pad_len)[0]
             data['targets'][i] = tc.sentence_to_target(row['sentence'], pad_len)[0]
 
-        with bz2.BZ2File(f'_cv_corpus/en/processed/{gender}/{phase}.pbz2','wb') as outfile:
+        with lzma.open(f'_cv_corpus/en/processed/{gender}/{phase}.xz','wb') as outfile:
             pickle.dump(data, outfile)
