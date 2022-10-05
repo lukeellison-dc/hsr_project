@@ -77,7 +77,7 @@ for gender in ['mixed', 'male', 'female']:
         df = pd.read_csv(f'./data/{gender}/{phase}.tsv', sep='\t', names=['path', 'sentence'])
         pad_len = 250
         data = {
-            'input_features': [],
+            'input_values': [],
             'sentences': [],
             'targets': torch.zeros([len(df), pad_len], dtype=torch.int),
         }
@@ -86,8 +86,8 @@ for gender in ['mixed', 'male', 'female']:
             wav, sr = proc.load(f'_cv_corpus/en/clips/{row["path"]}')
             wav = proc.resample(wav, sr)
             if wav.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
-                input_features = proc.extract_features(wav)
-                data['input_features'].append(input_features)
+                input_values = proc.extract_features(wav)
+                data['input_values'].append(input_values)
 
                 data['sentences'].append(row['sentence'])
                 target = tc.sentence_to_target(row['sentence'], pad_len)[0]
