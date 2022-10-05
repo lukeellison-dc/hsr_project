@@ -1,18 +1,15 @@
-from importlib.metadata import metadata
-import unicodedata
+from math import ceil
 import torch
 from torch import nn
 import torch.nn.functional as F
 from einops import rearrange
-import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
-import json
-import re
 import time
-import copy
 import jiwer
 import statistics
+import lzma
+import pickle
 
 
 #### util funcs
@@ -45,7 +42,6 @@ class ASRTrainer():
         self.name = name
         if self.device == None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                
 
     def load_model(self, model_name="facebook/wav2vec2-base-960h"):
         print(f"Loading model '{model_name}' to device '{self.device}'")
@@ -70,10 +66,8 @@ class ASRTrainer():
         pred_ids = self.pred_ids_from_logits(logits)
         return self.processor.batch_decode(pred_ids)
 
-    def train(self, cvdataset, optimizer, scheduler, num_epochs=25, batch_size=64):
-        target_creator = TargetCreator()
+    def train(self, dataloader, optimizer, scheduler, num_epochs=25, batch_size=64):
         ctc_loss = CTCLoss()
-        wer = WER()
         since = time.time()
 
         best_wer = 100.0
@@ -97,8 +91,8 @@ class ASRTrainer():
                 running_wers = []
 
                 # Iterate over data.
-                loader = cvdataset.batch_dataloader(phase, batch_size=batch_size)
-                total = cvdataset.dataset_sizes[phase] * 1.0/batch_size
+                loader = dataloader.batch_generator(phase, batch_size=batch_size)
+                total = ceil(dataloader.size[phase] * 1.0/batch_size)
                 every = 20
                 batch_i = 0
                 for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
@@ -107,19 +101,16 @@ class ASRTrainer():
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-                    normalised_sents = [target_creator.normalise(x) for x in d["sentences"]]
 
                     if batch_i%every == 0:
                         for i in range(2):
-                            print(f'- sentence[{i}] = {normalised_sents[i]}')
+                            print(f'- sentence[{i}] = {d["sentences"][i]}')
                             print(f'- pred[{i}] = {pred[i]}')
-                        w = wer.wer(normalised_sents, pred)
+                        w = jiwer.wer(d["sentences"], pred)
                         print(f'- wer = {w}')
 
 
-                    targets = torch.stack([target_creator.sentence_to_target(x)[0] for x in normalised_sents]) #.to(self.device)
-                    loss = ctc_loss(logits, targets)
-                    # print(f'loss = {loss.item()}')
+                    loss = ctc_loss(logits, d["targets"])
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -128,7 +119,7 @@ class ASRTrainer():
 
                     # statistics
                     running_loss += loss.item() * d["input_values"].size(0)
-                    running_wers.append(wer.wer(normalised_sents, pred))
+                    running_wers.append(jiwer.wer(d["sentences"], pred))
 
                     batch_i+=1
                     # if batch_i > 60:
@@ -147,7 +138,6 @@ class ASRTrainer():
                 if phase == 'test':
                     losses.append(epoch_loss)
                     wers.append(epoch_wer)
-                    # deep copy the model
                     if epoch_wer < best_wer:
                         print(f'New best found, saving...')
                         best_wer = epoch_wer
@@ -203,199 +193,26 @@ class CTCLoss(nn.Module):
 
         return F.ctc_loss(preds, targets, pred_lengths, target_lengths, blank=self.blank, zero_infinity=True)
 
+class DataLoader():
+    def __init__(self, gender):
+        self.gender = gender
+        self.data = {}
+        self.length = {}
 
-class TargetCreator():
-    def __init__(self, vocab="vocab.json"):
-        self.re_chars_to_remove = re.compile(r"[^A-Z\s]+")
-        self.re_whitespace = re.compile(r"\s+")
-        # self.expandCommonEnglishContractions = jiwer.ExpandCommonEnglishContractions()
+    def load(self, root="_cv_corpus/en/processed/"):
+        for phase in ['train', 'test']:
+            print(f'Loading dataset for {self.gender},{phase}...')
+            with lzma.open(f'_cv_corpus/en/processed/{self.gender}/{phase}.xz','rb') as infile:
+                self.data[phase] = pickle.load(infile)
 
-        with open("vocab.json", "r") as fp:
-            self.vocab = json.load(fp)
-
-        # self.test_vocab()
-        assert self.vocab["<pad>"] == 0
-        self.torch_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
-        self.unk = self.vocab["<unk>"]
-
-    def test_vocab(self):
-        number_of_classes = len(self.vocab)
-        classes = list(range(number_of_classes))
-        for x in self.vocab.values():
-            try:
-                classes.remove(x)
-            except Exception as e:
-                print(f"Could not remove '{x}'")
-                print(f"Remaining classes: '{classes}'")
-                raise e
-
-        assert len(classes) == 0
-
-    def normalise(self, sentence):
-        sentence = unicodedata.normalize('NFKD', sentence)
-        sentence = sentence.upper().replace('-', ' ')
-        sentence = self.re_chars_to_remove.sub('', sentence)
-        return sentence
-            
-    def sentence_to_target(self, sentence, pad_len=400):
-        sentence = self.normalise(sentence)
-        sentence = self.re_whitespace.sub('|', sentence) #replace all whitespace with |
-        t = torch.zeros([1, pad_len], dtype=torch.int)
-        for i,x in enumerate(sentence):
-            if i < pad_len:
-                t[0][i] = self.vocab[x]
-        return t
-        # return {
-        #     "target": t,
-        #     "target_len": len(sentence),
-        #     "pad_len": pad_len,
-        # }
-
-    def singleLoss(self, input_logits, target):
-        assert input_logits.shape[0] == 1 
-        assert target["target"].shape[0] == 1
-
-        input_lengths = torch.tensor([input_logits.shape[1]]) # in array of length 1 because single loss (no batch)
-        target_lengths = torch.tensor([target["target_len"]])
-        inp = input_logits.squeeze().unsqueeze(1)
-        # Try `inp.log_softmax(2)`
-        loss = self.torch_loss(inp.log_softmax(2), target["target"], input_lengths, target_lengths)
-        return loss
-
-    def backward(self):
-        self.torch_loss.backward()
-
-class CVDataset():
-    def __init__(self, processor, filters={}):
-        self._raw_datasets = {
-            "train": None,
-            "test": None,
-        }
-        self.dataset_sizes = {
-            "train": None,
-            "test": None,
-        }
-        self.filters = filters
-        self.processor = processor
-        self.target_sample_rate = processor.feature_extractor.sampling_rate
-
-        self.resamplers = {}
-
-    def _load_dataset(self, phase, root="_cv_corpus/en"):
-        self._raw_datasets[phase] = torchaudio.datasets.COMMONVOICE(
-            root=root,
-            tsv=f"{phase}.tsv",
-        )
-        self.dataset_sizes[phase] = len(self._raw_datasets[phase])
-        if len(self.filters) > 0:
-            self.dataset_sizes[phase] = sum(1 for dummy in self._filtered_ds(phase, log_prog=True))
-        print(f'{phase} dataset size = {self.dataset_sizes[phase]}')
-        # self.dataset_sizes[phase] = 20
-
-    def preload_datasets(self):
-        print('Preloading datasets...')
-        for phase in self._raw_datasets:
-            self._load_dataset(phase)
-        print('Preloading Complete.')
-
-    def _filtered_ds(self, phase, log_prog=False):
-        if(self._raw_datasets[phase] == None):
-            self._load_dataset(phase)
-        
-        i = 0
-        iterator = progress(self._raw_datasets[phase], total=len(self._raw_datasets[phase]), every=10000) if log_prog else self._raw_datasets[phase]
-        for datum in iterator:
-            _, _, metadata = datum
-            for key,val in self.filters.items():
-                if metadata[key] == val:
-                    yield datum
+        self.length[phase] = len(self.data)
+        print(f'Loading datasets.')
     
-    def single_dataloader(self, phase):
-        if(self._raw_datasets[phase] == None):
-            self._load_dataset(phase)
-
-        for datum in self._raw_datasets[phase]:
-            yield self.process_raw_data_item(datum)
-
-    def batch_dataloader(self, phase, batch_size=32):
-        if(self._raw_datasets[phase] == None):
-            self._load_dataset(phase)
-
-        batch_wavs = []
-        batch_sentences = []
-
-        i = 0
-        iterator = self._filtered_ds(phase) if len(self.filters) else self._raw_datasets[phase]
-        for datum in iterator:
-            wav, sr, metadata = self.resample(datum)
-            if wav.size(0) < 211585: #GPU can't handle sentences longer than this with the memory
-                batch_wavs.append(wav)
-                batch_sentences.append(metadata["sentence"])
-            i += 1
-            if i >= batch_size:
-                input_values = self.process_batch_wavs(batch_wavs)
-                yield {
-                    "input_values": self.process_batch_wavs(batch_wavs),
-                    "sentences": batch_sentences
-                }
-                batch_wavs = []
-                batch_sentences = []
-                i = 0
-            # if i == 20: break
-        yield {
-            "input_values": self.process_batch_wavs(batch_wavs),
-            "sentences": batch_sentences
-        }
-    
-    def resample(self, datum):
-        in_wav, in_sample_rate, metadata = datum
-        resampler = self.resamplers.get(in_sample_rate, None)
-        if resampler is None:
-            resampler = torchaudio.transforms.Resample(in_sample_rate, self.target_sample_rate, dtype=in_wav.dtype)
-
-        return resampler(in_wav)[0], self.target_sample_rate, metadata
-
-    def process_batch_wavs(self, batch_wavs):
-        vals = []
-        for x in batch_wavs:
-            features = self.processor(
-                x, 
-                sampling_rate=self.target_sample_rate, 
-                return_tensors="pt",
-            )
-            vals.append(features.input_values.t())
-        input_values = torch.nn.utils.rnn.pad_sequence(vals, batch_first=True).squeeze()
-        del vals
-        return input_values
-
-        
-    def process_raw_data_item(self, datum):
-        raw_wav, in_sample_rate, metadata = datum
-        resampled_wav = torchaudio.functional.resample(raw_wav, in_sample_rate, self.target_sample_rate)
-        features = self.processor(
-            resampled_wav[0], 
-            sampling_rate=self.target_sample_rate, 
-            return_tensors="pt",
-            padding=True
-        )
-
-        return {
-            "input_values": features.input_values,
-            "sentence": metadata["sentence"]
-        }
-
-class WER():
-    def __init__(self) -> None:
-        self.transformation = jiwer.Compose([
-            jiwer.ToLowerCase(),
-            jiwer.ExpandCommonEnglishContractions(),
-            jiwer.SubstituteRegexes({
-                r"[^\w\d\s]+": "",
-            }),
-            jiwer.RemoveWhiteSpace(replace_by_space=True),
-            jiwer.RemoveMultipleSpaces(),
-            jiwer.ReduceToListOfListOfWords(word_delimiter=" ")
-        ]) 
-    
-    def wer(self, truths, preds):
-        return jiwer.wer(truths, preds, truth_transform=self.transformation, hypothesis_transform=self.transformation)
+    def batch_generator(self, phase, batch_size=64):
+        keys = ['input_values', 'sentences', 'targets']
+        for i in range(0, len(self.data[phase]), batch_size):
+            batch = {
+                x: self.data[phase][x][i:i+batch_size] for x in keys
+            }
+            batch['input_values'] = torch.nn.utils.rnn.pad_sequence(batch['input_values'], batch_first=True)
+            yield batch
