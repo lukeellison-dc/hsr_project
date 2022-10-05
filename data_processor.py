@@ -7,10 +7,10 @@ from tqdm import tqdm
 import pickle
 import lzma
 
-class Resampler():
+class Processor():
     def __init__(self) -> None:
-        processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-        self.target_sample_rate = processor.feature_extractor.sampling_rate
+        self.w2v2processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+        self.target_sample_rate = self.processor.feature_extractor.sampling_rate
 
         self.resamplers = {}
 
@@ -21,6 +21,14 @@ class Resampler():
             self.resamplers[in_sample_rate] = resampler
 
         return resampler(in_wav)[0]
+
+    def extract_features(self, wav):
+        features = self.w2v2processor(
+            wav, 
+            sampling_rate=self.target_sample_rate, 
+            return_tensors="pt",
+        )
+        return features.input_values
 
     def load(self, path):
         waveform, sample_rate = torchaudio.load(path)
@@ -61,7 +69,7 @@ class TargetCreator():
             print(f'Setence longer than pad len with len={len(sentence)}:\n"{sentence}"')
         return t
 
-rs = Resampler()
+proc = Processor()
 tc = TargetCreator()
 for gender in ['mixed', 'male', 'female']:
     for phase in ['train', 'test']:
@@ -69,15 +77,16 @@ for gender in ['mixed', 'male', 'female']:
         df = pd.read_csv(f'./data/{gender}/{phase}.tsv', sep='\t', names=['path', 'sentence'])
         pad_len = 250
         data = {
-            'wavs': [],
+            'input_features': [],
             'sentences': [],
             'targets': torch.zeros([len(df), pad_len], dtype=torch.int),
         }
         
         for i,row in tqdm(df.iterrows(), total=len(df)):
-            wav, sr = rs.load(f'_cv_corpus/en/clips/{row["path"]}')
-            wav = rs.resample(wav, sr)
-            data['wavs'].append(wav)
+            wav, sr = proc.load(f'_cv_corpus/en/clips/{row["path"]}')
+            wav = proc.resample(wav, sr)
+            input_features = proc.extract_features(wav)
+            data['input_features'].append(input_features)
 
             data['sentences'].append(row['sentence'])
             target = tc.sentence_to_target(row['sentence'], pad_len)[0]
