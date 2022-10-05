@@ -15,7 +15,7 @@ def normalise(sentence):
     sentence = re_whitespace.sub(' ', sentence) #collapse spaces
     return sentence
 
-df = pd.read_csv(f'{ROOT}validated.tsv', sep='\t', header=0)
+df = pd.read_csv(f'{ROOT}validated.tsv', sep='\t', header=0, quoting=3)
 print(f'total rows = {len(df)}')
 counts = df.count()
 print(f"rows with gender = {counts['gender']}")
@@ -60,5 +60,5 @@ def write_output(df, name):
 write_output(df, "mixed")
 write_output(df.loc[df['gender'] == 'female'], 'female')
 write_output(df.loc[df['gender'] == 'male'], 'male')
-# {'train': {'male': 503667, 'female': 175780}, 'test': {'male': 129659, 'female': 37775}}
-# train = 2.865, test = 3.4324023825
+# train = 2.864, test = 3.431
+# {'train': {'male': 503781, 'female': 175893}, 'test': {'male': 129688, 'female': 37803}}

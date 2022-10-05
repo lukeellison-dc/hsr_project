@@ -48,7 +48,7 @@ class TargetCreator():
 
         assert len(classes) == 0
 
-    def sentence_to_target(self, sentence, pad_len=400):
+    def sentence_to_target(self, sentence, pad_len=250):
         sentence = sentence.replace(' ', '|') #replace all whitespace with |
         t = torch.zeros([1, pad_len], dtype=torch.int)
         longer = False
@@ -67,7 +67,7 @@ for gender in ['mixed', 'male', 'female']:
     for phase in ['train', 'test']:
         print(f'Processing {gender},{phase}...')
         df = pd.read_csv(f'./data/{gender}/{phase}.tsv', sep='\t', names=['path', 'sentence'])
-        pad_len = 400
+        pad_len = 250
         data = {
             'wavs': [],
             'sentences': [],
