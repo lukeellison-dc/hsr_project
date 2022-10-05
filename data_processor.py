@@ -10,7 +10,7 @@ import lzma
 class Processor():
     def __init__(self) -> None:
         self.w2v2processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-        self.target_sample_rate = self.processor.feature_extractor.sampling_rate
+        self.target_sample_rate = self.w2v2processor.feature_extractor.sampling_rate
 
         self.resamplers = {}
 
@@ -82,7 +82,7 @@ for gender in ['mixed', 'male', 'female']:
             'targets': torch.zeros([len(df), pad_len], dtype=torch.int),
         }
         
-        for i,row in tqdm(df.iterrows(), total=len(df)):
+        for i,row in tqdm(df.iterrows(), total=len(df), mininterval=5):
             wav, sr = proc.load(f'_cv_corpus/en/clips/{row["path"]}')
             wav = proc.resample(wav, sr)
             input_features = proc.extract_features(wav)
