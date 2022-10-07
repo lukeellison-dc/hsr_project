@@ -5,7 +5,7 @@ import json
 import torch
 from tqdm import tqdm
 import pickle
-import lzma
+import bz2
 
 class Processor():
     def __init__(self) -> None:
@@ -71,7 +71,7 @@ class TargetCreator():
 
 proc = Processor()
 tc = TargetCreator()
-for gender in ['mixed', 'male', 'female']:
+for gender in ['female', 'male', 'mixed']:
     for phase in ['train', 'test']:
         print(f'Processing {gender},{phase}...')
         df = pd.read_csv(f'./data/{gender}/{phase}.tsv', sep='\t', names=['path', 'sentence'])
@@ -93,5 +93,5 @@ for gender in ['mixed', 'male', 'female']:
                 target = tc.sentence_to_target(row['sentence'], pad_len)[0]
                 data['targets'][i] = tc.sentence_to_target(row['sentence'], pad_len)[0]
 
-        with lzma.open(f'_cv_corpus/en/processed/{gender}/{phase}.xz','wb') as outfile:
+        with bz2.BZ2File(f'/raid/lellison_data/hsr_project/processed/{gender}/{phase}.xz','wb') as outfile:
             pickle.dump(data, outfile)

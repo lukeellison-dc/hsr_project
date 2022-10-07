@@ -8,7 +8,7 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 import time
 import jiwer
 import statistics
-import lzma
+import bz2
 import pickle
 
 
@@ -199,10 +199,10 @@ class DataLoader():
         self.data = {}
         self.length = {}
 
-    def load(self, root="_cv_corpus/en/processed/"):
+    def load(self, root="/raid/lellison_data/hsr_project/processed/"):
         for phase in ['train', 'test']:
             print(f'Loading dataset for {self.gender},{phase}...')
-            with lzma.open(f'_cv_corpus/en/processed/{self.gender}/{phase}.xz','rb') as infile:
+            with bz2.BZ2File(f'{root}{self.gender}/{phase}.xz','rb') as infile:
                 self.data[phase] = pickle.load(infile)
 
         self.length[phase] = len(self.data)
