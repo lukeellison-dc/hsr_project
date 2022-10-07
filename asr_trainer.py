@@ -92,7 +92,7 @@ class ASRTrainer():
 
                 # Iterate over data.
                 loader = dataloader.batch_generator(phase, batch_size=batch_size)
-                total = ceil(dataloader.size[phase] * 1.0/batch_size)
+                total = ceil(dataloader.length[phase] * 1.0/batch_size)
                 every = 20
                 batch_i = 0
                 for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
