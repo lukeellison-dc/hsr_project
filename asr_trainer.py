@@ -92,6 +92,7 @@ class ASRTrainer():
 
                 # Iterate over data.
                 loader = dataloader.batch_generator(phase, batch_size=batch_size)
+                print(dataloader.length)
                 total = ceil(dataloader.length[phase] * 1.0/batch_size)
                 every = 20
                 batch_i = 0
@@ -129,7 +130,7 @@ class ASRTrainer():
                 if phase == 'train':
                     scheduler.step()
 
-                epoch_loss = running_loss / cvdataset.dataset_sizes[phase]
+                epoch_loss = running_loss / dataloader.length[phase]
                 epoch_wer = statistics.fmean(running_wers)
 
                 print('-' * 10)
@@ -200,12 +201,13 @@ class DataLoader():
         self.length = {}
 
     def load(self, root="/raid/lellison_data/hsr_project/processed/"):
-        for phase in ['train', 'test']:
+        for phase in ['train']:
             print(f'Loading dataset for {self.gender},{phase}...')
             with lzma.open(f'{root}{self.gender}/{phase}.xz','rb') as infile:
                 self.data[phase] = pickle.load(infile)
 
         self.length[phase] = len(self.data)
+        print(self.length)
         print(f'Loading datasets.')
     
     def batch_generator(self, phase, batch_size=64):
