@@ -206,14 +206,13 @@ class DataLoader():
             with lzma.open(f'{root}{self.gender}/{phase}.xz','rb') as infile:
                 self.data[phase] = pickle.load(infile)
 
-        self.length[phase] = len(self.data[phase])
+            self.length[phase] = len(self.data[phase])
         print(self.length)
         print(f'Loading datasets.')
     
     def batch_generator(self, phase, batch_size=64):
         keys = ['input_values', 'sentences', 'targets']
         for i in range(0, self.length[phase], batch_size):
-            print(f"batch i={i}")
             batch = {
                 x: self.data[phase][x][i:i+batch_size] for x in keys
             }
