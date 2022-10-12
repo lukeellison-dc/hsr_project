@@ -206,7 +206,7 @@ class DataLoader():
             with lzma.open(f'{root}{self.gender}/{phase}.xz','rb') as infile:
                 self.data[phase] = pickle.load(infile)
 
-            self.length[phase] = len(self.data[phase])
+            self.length[phase] = len(self.data[phase]['sentences'])
         print(self.length)
         print(f'Loading datasets.')
     
