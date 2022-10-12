@@ -203,12 +203,14 @@ class DataLoader():
     def load(self, root="/raid/lellison_data/hsr_project/processed/"):
         for phase in ['train', 'test']:
             print(f'Loading dataset for {self.gender},{phase}...')
+            start = time.time()
             with lzma.open(f'{root}{self.gender}/{phase}.xz','rb') as infile:
                 self.data[phase] = pickle.load(infile)
-
             self.length[phase] = len(self.data[phase]['sentences'])
+            print(f'Loaded {phase} data in {td_string(time.time() - start)}.')
+
         print(self.length)
-        print(f'Loading datasets.')
+        print(f'Loaded datasets.')
     
     def batch_generator(self, phase, batch_size=64):
         keys = ['input_values', 'sentences', 'targets']
