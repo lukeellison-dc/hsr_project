@@ -182,8 +182,8 @@ class CTCLoss(nn.Module):
         Returns:
             torch.Tensor: Loss scalar.
         """
-        # print(preds.shape)
-        # print(targets.shape)
+        # print(f'preds.shape = {preds.shape}')
+        # print(f'targets.shape = {targets.shape}')
         preds = preds.log_softmax(-1)
         batch, seq_len, classes = preds.shape
         preds = rearrange(preds, "n t c -> t n c") # since ctc_loss needs (T, N, C) inputs
@@ -215,8 +215,9 @@ class DataLoader():
     def batch_generator(self, phase, batch_size=64):
         keys = ['input_values', 'sentences', 'targets']
         for i in range(0, self.length[phase], batch_size):
+            upper = min(i+batch_size, self.length[phase])
             batch = {
-                x: self.data[phase][x][i:i+batch_size] for x in keys
+                x: self.data[phase][x][i:upper] for x in keys
             }
             batch['input_values'] = torch.nn.utils.rnn.pad_sequence(batch['input_values'], batch_first=True)
             yield batch
