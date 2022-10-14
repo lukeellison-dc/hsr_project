@@ -110,7 +110,6 @@ class ASRTrainer():
                         w = jiwer.wer(d["sentences"], pred)
                         print(f'- wer = {w}')
 
-
                     loss = ctc_loss(logits, d["targets"])
 
                     # backward + optimize only if in training phase
@@ -191,6 +190,8 @@ class CTCLoss(nn.Module):
 
         pred_lengths = torch.full(size=(batch,), fill_value=seq_len, dtype=torch.long)
         target_lengths = torch.count_nonzero(targets, axis=1)
+        m = torch.max(target_lengths)
+        targets = targets[:,:m]
 
         return F.ctc_loss(preds, targets, pred_lengths, target_lengths, blank=self.blank, zero_infinity=True)
 
@@ -209,7 +210,6 @@ class DataLoader():
             self.length[phase] = len(self.data[phase]['sentences'])
             print(f'Loaded {phase} data in {td_string(time.time() - start)}.')
 
-        print(self.length)
         print(f'Loaded datasets.')
     
     def batch_generator(self, phase, batch_size=64):
