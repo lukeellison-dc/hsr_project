@@ -77,7 +77,7 @@ class ASRTrainer():
 
         for epoch in progress(range(num_epochs), total=num_epochs, prefix='epochs: ', every=1):
             print('-' * 10)
-            print(f'Epoch {epoch + 1}/{num_epochs}')
+            print(f'Epoch {epoch + 1}/{num_epochs} ({dataloader.gender})')
             print('-' * 10)
 
             # Each epoch has a training and validation phase
@@ -92,7 +92,6 @@ class ASRTrainer():
 
                 # Iterate over data.
                 loader = dataloader.batch_generator(phase, batch_size=batch_size)
-                print(dataloader.length)
                 total = ceil(dataloader.length[phase] * 1.0/batch_size)
                 every = 20
                 batch_i = 0
@@ -118,8 +117,13 @@ class ASRTrainer():
                         optimizer.step()
 
                     # statistics
+                    wer = jiwer.wer(d["sentences"], pred)
+                    if wer >= 1.0:
+                        print('-' * 10)
+                        print(f'Abandoning. Produced batch with no correct words. (epoch={epoch+1}, batch_i={batch_i})')
+                        return False
                     running_loss += loss.item() * d["input_values"].size(0)
-                    running_wers.append(jiwer.wer(d["sentences"], pred))
+                    running_wers.append(wer)
 
                     batch_i+=1
                     # if batch_i > 60:
@@ -151,6 +155,7 @@ class ASRTrainer():
         print(f'Best WER: {best_wer:4f}')
         print(f'All losses: {losses}')
         print(f'All WERs: {wers}')
+        return True
 
     def save(self, wts):
         path = f'./models/{self.name}_model.pt'
