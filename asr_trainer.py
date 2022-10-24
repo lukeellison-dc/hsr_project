@@ -48,7 +48,7 @@ class ASRTrainer():
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = Wav2Vec2ForCTC.from_pretrained(model_name).to(self.device)
-        if torch.cuda.is_available():
+        if self.device != 'cpu' and torch.cuda.is_available():
             self.model = nn.DataParallel(self.model)
 
     def get_logits(self, input_values, grad=False):
@@ -93,8 +93,11 @@ class ASRTrainer():
                 # Iterate over data.
                 loader = dataloader.batch_generator(phase, batch_size=batch_size)
                 total = ceil(dataloader.length[phase] * 1.0/batch_size)
-                every = 20
+                print(f'total batches = {total}')
+                every = 50
                 batch_i = 0
+                wer_1_past = []
+                wer_1_past_threshold = 3
                 for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
@@ -119,9 +122,13 @@ class ASRTrainer():
                     # statistics
                     wer = jiwer.wer(d["sentences"], pred)
                     if wer >= 1.0:
-                        print('-' * 10)
-                        print(f'Abandoning. Produced batch with no correct words. (epoch={epoch+1}, batch_i={batch_i})')
-                        return False
+                        wer_1_past.append(True)
+                        if len(wer_1_past) >= wer_1_past_threshold:
+                            print('-' * 10)
+                            print(f'Abandoning. Produced {wer_1_past_threshold} batches with no correct words. (epoch={epoch+1}, batch_i={batch_i})')
+                            return False
+                    else:
+                        wer_1_past = []
                     running_loss += loss.item() * d["input_values"].size(0)
                     running_wers.append(wer)
 
