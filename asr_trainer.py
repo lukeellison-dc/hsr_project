@@ -96,21 +96,12 @@ class ASRTrainer():
                 print(f'total batches = {total}')
                 every = 50
                 batch_i = 0
-                wer_1_past = []
-                wer_1_past_threshold = 3
                 for d in progress(loader, total=total, prefix=f'{phase}_batch: ', every=every):
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
                     logits = self.get_logits(d["input_values"], grad=(phase == 'train'))
                     pred = self.predict_argmax_from_logits(logits)
-
-                    if batch_i%every == 0:
-                        for i in range(2):
-                            print(f'- sentence[{i}] = {d["sentences"][i]}')
-                            print(f'- pred[{i}] = {pred[i]}')
-                        w = jiwer.wer(d["sentences"], pred)
-                        print(f'- wer = {w}')
 
                     loss = ctc_loss(logits, d["targets"])
 
@@ -121,21 +112,16 @@ class ASRTrainer():
 
                     # statistics
                     wer = jiwer.wer(d["sentences"], pred)
-                    if wer >= 1.0:
-                        wer_1_past.append(True)
-                        if len(wer_1_past) >= wer_1_past_threshold:
-                            print('-' * 10)
-                            print(f'Abandoning. Produced {wer_1_past_threshold} batches with no correct words. (epoch={epoch+1}, batch_i={batch_i})')
-                            return False
-                    else:
-                        wer_1_past = []
                     running_loss += loss.item() * d["input_values"].size(0)
                     running_wers.append(wer)
 
+                    if batch_i%every == 0:
+                        for i in range(2):
+                            print(f'- sentence[{i}] = {d["sentences"][i]}')
+                            print(f'- pred[{i}] = {pred[i]}')
+                        print(f'- wer = {wer}')
+
                     batch_i+=1
-                    # if batch_i > 60:
-                    #     break
-                    # print(torch.cuda.max_memory_reserved())
 
                 if phase == 'train':
                     scheduler.step()
@@ -193,8 +179,6 @@ class CTCLoss(nn.Module):
         Returns:
             torch.Tensor: Loss scalar.
         """
-        # print(f'preds.shape = {preds.shape}')
-        # print(f'targets.shape = {targets.shape}')
         preds = preds.log_softmax(-1)
         batch, seq_len, classes = preds.shape
         preds = rearrange(preds, "n t c -> t n c") # since ctc_loss needs (T, N, C) inputs
